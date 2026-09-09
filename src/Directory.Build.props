@@ -4,6 +4,14 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <AnalysisMode>Recommended</AnalysisMode>
+        <Authors>Thomas C. Flanagan</Authors>
+        <Company>TcfOss</Company>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageProjectUrl>https://github.com/tcfoss/string-enum-generator</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/tcfoss/string-enum-generator</RepositoryUrl>
+        <RepositoryType>git</RepositoryType>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     </PropertyGroup>
 
     <PropertyGroup>
@@ -18,4 +26,8 @@
             <AssemblyVersion>1.0.0.0</AssemblyVersion>
         </PropertyGroup>
     </Target>
+
+    <ItemGroup>
+        <None Include="..\..\README.md" Pack="true" PackagePath="/" />
+    </ItemGroup>
 </Project>

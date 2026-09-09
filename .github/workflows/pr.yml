@@ -2,10 +2,62 @@ name: Pull Request
 
 on:
   pull_request:
-    types: [opened, reopened, synchronize]
+    types: [opened, synchronize]
 
 jobs:
-  lint-and-test:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore StringEnumGenerator.slnx
+
+      - name: Lint
+        run: dotnet format StringEnumGenerator.slnx --verify-no-changes --severity info --no-restore
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore StringEnumGenerator.slnx
+
+      - name: Build
+        run: dotnet build StringEnumGenerator.slnx --no-restore --configuration Release
+
+      - name: Test
+        run: |
+          dotnet test test/TcfOss.StringEnumGenerator.Tests/TcfOss.StringEnumGenerator.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --settings coverage.runsettings \
+            --collect "XPlat Code Coverage" \
+            --results-directory TestResults
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-test-results
+          path: TestResults/
+
+  validate-release:
+    if: startsWith(github.head_ref, 'release/')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -19,49 +71,83 @@ jobs:
       - name: Fetch tags
         run: git fetch --tags --force
 
-      # Only release/vX.Y.Z[-suffix] branches trigger the release-specific steps below.
       - name: Parse release version
         id: parse-release
-        if: startsWith(github.head_ref, 'release/')
+        env:
+          BRANCH: ${{ github.head_ref }}
         run: |
-          branch="${{ github.head_ref }}"
-          if [[ "$branch" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]]; then
+          if [[ "$BRANCH" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]]; then
             echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::Branch name '$branch' does not match release/vX.Y.Z[-suffix]"
+            echo "::error::Branch name '$BRANCH' does not match release/vX.Y.Z[-suffix]"
             exit 1
           fi
 
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Restore
-        run: dotnet restore StringEnumGenerator.slnx
-
-      - name: Build
-        run: dotnet build StringEnumGenerator.slnx --no-restore --configuration Release
-
-      - name: Lint
-        run: dotnet format StringEnumGenerator.slnx --verify-no-changes --severity info
-
-      - name: Test
-        run: |
-          dotnet test test/TcfOss.StringEnumGenerator.Tests/TcfOss.StringEnumGenerator.Tests.csproj \
-            --no-build \
-            --configuration Release \
-            --settings coverage.runsettings \
-            --collect "XPlat Code Coverage" \
-            --results-directory TestResults
-
       - name: Validate release
-        if: steps.parse-release.outputs.version != ''
-        uses: ./.github/actions/issuetracker
+        uses: tcfoss/github-actions/.github/actions/issuetracker@v1
         with:
           command: validate
           api-url: ${{ vars.ISSUETRACKER_API_URL }}
           version: ${{ steps.parse-release.outputs.version }}
           token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+
+      - name: Release notes
+        id: notes
+        uses: tcfoss/github-actions/.github/actions/issuetracker@v1
+        with:
+          command: notes
+          api-url: ${{ vars.ISSUETRACKER_API_URL }}
+          version: ${{ steps.parse-release.outputs.version }}
+          token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+
+      - name: Add release notes to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const notes = fs.readFileSync('${{ steps.notes.outputs.notes-file }}', 'utf8');
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            const marker = '<!-- release-notes -->';
+            const block = `${marker}\n${notes}\n${marker}`;
+
+            const body = pr.body ?? '';
+            const updated = body.includes(marker)
+              ? body.replace(new RegExp(`${marker}[\\s\\S]*?${marker}`), block)
+              : `${body}\n\n${block}`.trimStart();
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: updated,
+            });
+
+  coverage:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Download test results
+        uses: actions/download-artifact@v7
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+          path: TestResults
 
       - name: Install reportgenerator
         run: dotnet tool install -g dotnet-reportgenerator-globaltool

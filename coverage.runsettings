@@ -2,31 +2,22 @@
 <RunSettings>
   <DataCollectionRunSettings>
     <DataCollectors>
-      <DataCollector friendlyName="Code Coverage">
+      <DataCollector friendlyName="XPlat Code Coverage">
         <Configuration>
           <Format>cobertura</Format>
-          <ExcludeByFile>**/Migrations/*.cs,</ExcludeByFile>
+
+          <!-- File exclusions: Generated sources -->
+          <!-- Coverlet ExcludeByFile uses semicolon-separated globs     -->
+          <ExcludeByFile>**/*.g.cs</ExcludeByFile>
+
+          <!-- Assembly/module exclusions: glob patterns, no regex        -->
+          <!-- Coverlet matches on assembly name, not filename            -->
+          <Exclude>[System.Text.*]*,[Testcontainers*]*,[MySqlConnector*]*,[Docker.DotNet*]*,[*.Tests]*,[*.IntegrationTests]*</Exclude>
+
+          <!-- Coverlet respects these automatically, but explicit is fine -->
+          <ExcludeByAttribute>ExcludeFromCodeCoverage,GeneratedCode</ExcludeByAttribute>
+
           <SkipAutoProps>true</SkipAutoProps>
-          <CodeCoverage>
-            <Sources>
-              <Exclude>
-              </Exclude>
-            </Sources>
-            <ModulePaths>
-              <Exclude>
-              </Exclude>
-            </ModulePaths>
-            <Attributes>
-              <Exclude>
-                <Attribute>ExcludeFromCodeCoverageAttribute</Attribute>
-                <Attribute>GeneratedCodeAttribute</Attribute>
-              </Exclude>
-            </Attributes>
-            <Functions>
-              <Exclude>
-              </Exclude>
-            </Functions>
-          </CodeCoverage>
         </Configuration>
       </DataCollector>
     </DataCollectors>
