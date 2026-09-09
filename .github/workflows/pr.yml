@@ -1,0 +1,109 @@
+name: Pull Request
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      # Only release/vX.Y.Z[-suffix] branches trigger the release-specific steps below.
+      - name: Parse release version
+        id: parse-release
+        if: startsWith(github.head_ref, 'release/')
+        run: |
+          branch="${{ github.head_ref }}"
+          if [[ "$branch" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Branch name '$branch' does not match release/vX.Y.Z[-suffix]"
+            exit 1
+          fi
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore StringEnumGenerator.slnx
+
+      - name: Build
+        run: dotnet build StringEnumGenerator.slnx --no-restore --configuration Release
+
+      - name: Lint
+        run: dotnet format StringEnumGenerator.slnx --verify-no-changes --severity info
+
+      - name: Test
+        run: |
+          dotnet test test/TcfOss.StringEnumGenerator.Tests/TcfOss.StringEnumGenerator.Tests.csproj \
+            --no-build \
+            --configuration Release \
+            --settings coverage.runsettings \
+            --collect "XPlat Code Coverage" \
+            --results-directory TestResults
+
+      - name: Validate release
+        if: steps.parse-release.outputs.version != ''
+        uses: ./.github/actions/issuetracker
+        with:
+          command: validate
+          api-url: ${{ vars.ISSUETRACKER_API_URL }}
+          version: ${{ steps.parse-release.outputs.version }}
+          token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+
+      - name: Install reportgenerator
+        run: dotnet tool install -g dotnet-reportgenerator-globaltool
+
+      - name: Generate coverage report
+        run: |
+          reportgenerator \
+            -reports:"TestResults/**/*.cobertura.xml" \
+            -targetdir:coverage \
+            -reporttypes:"Html;TextSummary;MarkdownSummaryGithub"
+          cat coverage/Summary.txt
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage
+          path: coverage/
+
+      - name: Add coverage summary to PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const summary = fs.readFileSync('coverage/SummaryGithub.md', 'utf8');
+
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+
+            const marker = '<!-- coverage-summary -->';
+            const block = `${marker}\n${summary}\n${marker}`;
+
+            const body = pr.body ?? '';
+            const updated = body.includes(marker)
+              ? body.replace(new RegExp(`${marker}[\\s\\S]*?${marker}`), block)
+              : `${body}\n\n${block}`.trimStart();
+
+            await github.rest.pulls.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+              body: updated,
+            });

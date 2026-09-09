@@ -1,0 +1,145 @@
+name: Release
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to (re-)release, e.g. 1.0.0. Required for manual runs.'
+        required: true
+      force-retag:
+        description: 'Delete and recreate the tag if it already exists'
+        type: boolean
+        default: false
+
+jobs:
+  parse-version:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.base_ref == 'master')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - id: parse
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          branch="${{ github.head_ref }}"
+          if [[ "$branch" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]]; then
+            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Branch name '$branch' does not match release/vX.Y.Z[-suffix]"
+            exit 1
+          fi
+
+  tag:
+    needs: parse-version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag release
+        run: |
+          version="v${{ needs.parse-version.outputs.version }}"
+          if [[ "${{ inputs.force-retag }}" == "true" ]]; then
+            git push origin ":refs/tags/$version" || true
+            git tag -d "$version" 2>/dev/null || true
+          fi
+          git tag -a "$version" -m "Release $version"
+          git push origin "$version"
+
+  publish-dotnet:
+    needs: tag
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Fetch tags
+        run: git fetch --tags --force
+
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore StringEnumGenerator.slnx
+
+      - name: Build
+        run: dotnet build StringEnumGenerator.slnx --no-restore --configuration Release
+
+      - name: Pack
+        run: |
+          dotnet pack src/TcfOss.StringEnumGenerator/TcfOss.StringEnumGenerator.csproj \
+            --no-build --configuration Release --output ./nupkg
+
+      - name: Push to GitHub Packages
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --source "https://nuget.pkg.github.com/tcfoss/index.json" \
+            --api-key ${{ secrets.GITHUB_TOKEN }} \
+            --skip-duplicate
+
+      - name: NuGet login (OIDC -> temp API key)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: tcflanagan
+
+      - name: Push to NuGet.org
+        run: |
+          dotnet nuget push ./nupkg/*.nupkg \
+            --source "https://api.nuget.org/v3/index.json" \
+            --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} \
+            --skip-duplicate
+
+  finalize-release:
+    needs: [parse-version, publish-dotnet]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Resolve release
+        uses: ./.github/actions/issuetracker
+        with:
+          command: resolve
+          api-url: ${{ vars.ISSUETRACKER_API_URL }}
+          version: ${{ needs.parse-version.outputs.version }}
+          token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+          release-url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.parse-version.outputs.version }}
+
+      - name: Release notes
+        id: notes
+        uses: ./.github/actions/issuetracker
+        with:
+          command: notes
+          api-url: ${{ vars.ISSUETRACKER_API_URL }}
+          version: ${{ needs.parse-version.outputs.version }}
+          token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+          release-url: https://github.com/${{ github.repository }}/releases/tag/v${{ needs.parse-version.outputs.version }}
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.parse-version.outputs.version }}
+          body_path: ${{ steps.notes.outputs.notes-file }}

@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TcfOss.StringEnumGenerator/TcfOss.StringEnumGenerator.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/TcfOss.StringEnumGenerator.Tests/TcfOss.StringEnumGenerator.Tests.csproj" />
+  </Folder>
+</Solution>

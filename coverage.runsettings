@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<RunSettings>
+  <DataCollectionRunSettings>
+    <DataCollectors>
+      <DataCollector friendlyName="Code Coverage">
+        <Configuration>
+          <Format>cobertura</Format>
+          <ExcludeByFile>**/Migrations/*.cs,</ExcludeByFile>
+          <SkipAutoProps>true</SkipAutoProps>
+          <CodeCoverage>
+            <Sources>
+              <Exclude>
+              </Exclude>
+            </Sources>
+            <ModulePaths>
+              <Exclude>
+              </Exclude>
+            </ModulePaths>
+            <Attributes>
+              <Exclude>
+                <Attribute>ExcludeFromCodeCoverageAttribute</Attribute>
+                <Attribute>GeneratedCodeAttribute</Attribute>
+              </Exclude>
+            </Attributes>
+            <Functions>
+              <Exclude>
+              </Exclude>
+            </Functions>
+          </CodeCoverage>
+        </Configuration>
+      </DataCollector>
+    </DataCollectors>
+  </DataCollectionRunSettings>
+  <RunConfiguration>
+    <ResultsDirectory>./test-results</ResultsDirectory>
+  </RunConfiguration>
+</RunSettings>

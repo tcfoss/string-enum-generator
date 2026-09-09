@@ -1,0 +1,21 @@
+<Project>
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AnalysisMode>Recommended</AnalysisMode>
+    </PropertyGroup>
+
+    <PropertyGroup>
+        <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+        <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+        <MinVerTagPrefix>v</MinVerTagPrefix>
+    </PropertyGroup>
+
+    <Target Name="OverrideVersions" AfterTargets="MinVer">
+        <PropertyGroup>
+            <!-- Update only when major version changes -->
+            <AssemblyVersion>1.0.0.0</AssemblyVersion>
+        </PropertyGroup>
+    </Target>
+</Project>
