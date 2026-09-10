@@ -2,7 +2,7 @@ name: Pull Request
 
 on:
   pull_request:
-    types: [opened, synchronize]
+    types: [opened, reopened, synchronize]
 
 jobs:
   lint:
@@ -56,140 +56,31 @@ jobs:
           name: coverage-test-results
           path: TestResults/
 
-  validate-release:
-    if: startsWith(github.head_ref, 'release/')
+  today:
     runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.today.outputs.date }}
+    steps:
+      - id: today
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+  validate-release:
+    needs: today
+    if: startsWith(github.head_ref, 'release/')
+    uses: tcfoss/github-actions/.github/workflows/validate-release.yml@v1
     permissions:
       contents: read
       pull-requests: write
-
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Fetch tags
-        run: git fetch --tags --force
-
-      - name: Parse release version
-        id: parse-release
-        env:
-          BRANCH: ${{ github.head_ref }}
-        run: |
-          if [[ "$BRANCH" =~ ^release/v([0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.]+)?)$ ]]; then
-            echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
-          else
-            echo "::error::Branch name '$BRANCH' does not match release/vX.Y.Z[-suffix]"
-            exit 1
-          fi
-
-      - name: Validate release
-        uses: tcfoss/github-actions/.github/actions/issuetracker@v1
-        with:
-          command: validate
-          api-url: ${{ vars.ISSUETRACKER_API_URL }}
-          version: ${{ steps.parse-release.outputs.version }}
-          token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
-
-      - name: Release notes
-        id: notes
-        uses: tcfoss/github-actions/.github/actions/issuetracker@v1
-        with:
-          command: notes
-          api-url: ${{ vars.ISSUETRACKER_API_URL }}
-          version: ${{ steps.parse-release.outputs.version }}
-          token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
-
-      - name: Add release notes to PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const notes = fs.readFileSync('${{ steps.notes.outputs.notes-file }}', 'utf8');
-
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
-
-            const marker = '<!-- release-notes -->';
-            const block = `${marker}\n${notes}\n${marker}`;
-
-            const body = pr.body ?? '';
-            const updated = body.includes(marker)
-              ? body.replace(new RegExp(`${marker}[\\s\\S]*?${marker}`), block)
-              : `${body}\n\n${block}`.trimStart();
-
-            await github.rest.pulls.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              body: updated,
-            });
+    with:
+      branch: ${{ github.head_ref }}
+      api-url: ${{ vars.ISSUETRACKER_API_URL }}
+      release-date: ${{ needs.today.outputs.date }}
+    secrets:
+      issuetracker-api-token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
 
   coverage:
     needs: unit-tests
-    runs-on: ubuntu-latest
+    uses: tcfoss/github-actions/.github/workflows/coverage.yml@v1
     permissions:
       contents: read
       pull-requests: write
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-
-      - name: Download test results
-        uses: actions/download-artifact@v7
-        with:
-          pattern: coverage-*
-          merge-multiple: true
-          path: TestResults
-
-      - name: Install reportgenerator
-        run: dotnet tool install -g dotnet-reportgenerator-globaltool
-
-      - name: Generate coverage report
-        run: |
-          reportgenerator \
-            -reports:"TestResults/**/*.cobertura.xml" \
-            -targetdir:coverage \
-            -reporttypes:"Html;TextSummary;MarkdownSummaryGithub"
-          cat coverage/Summary.txt
-
-      - name: Upload coverage artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: coverage
-          path: coverage/
-
-      - name: Add coverage summary to PR
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const fs = require('fs');
-            const summary = fs.readFileSync('coverage/SummaryGithub.md', 'utf8');
-
-            const { data: pr } = await github.rest.pulls.get({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-            });
-
-            const marker = '<!-- coverage-summary -->';
-            const block = `${marker}\n${summary}\n${marker}`;
-
-            const body = pr.body ?? '';
-            const updated = body.includes(marker)
-              ? body.replace(new RegExp(`${marker}[\\s\\S]*?${marker}`), block)
-              : `${body}\n\n${block}`.trimStart();
-
-            await github.rest.pulls.update({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.issue.number,
-              body: updated,
-            });
