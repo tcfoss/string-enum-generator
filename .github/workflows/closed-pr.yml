@@ -1,0 +1,83 @@
+name: Pull Request Merged
+
+on:
+  pull_request:
+    types: [closed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, without the v prefix
+        required: true
+        type: string
+      force-retag:
+        description: Delete and recreate the tag if it already exists
+        type: boolean
+        default: false
+
+jobs:
+  resolve-work-items:
+    if: github.event.pull_request.merged == true
+    uses: tcfoss/github-actions/.github/workflows/resolve-pr-work-items.yml@v1
+    permissions:
+      contents: read
+    with:
+      pull-request-description: ${{ github.event.pull_request.body }}
+      api-url: ${{ vars.ISSUETRACKER_API_URL }}
+      target-status: Done
+    secrets:
+      issuetracker-api-token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+
+  parse-version:
+    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.merged == true && startsWith(github.head_ref, 'release/') && github.base_ref == 'master')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+    steps:
+      - id: parse
+        uses: tcfoss/github-actions/.github/actions/parse-release-version@v1
+        with:
+          branch: ${{ github.head_ref }}
+          version-override: ${{ inputs.version }}
+
+  tag:
+    needs: parse-version
+    uses: tcfoss/github-actions/.github/workflows/tag-release.yml@v1
+    permissions:
+      contents: write
+    with:
+      version: ${{ needs.parse-version.outputs.version }}
+      force-retag: ${{ inputs.force-retag }}
+    secrets: inherit
+
+  publish-dotnet:
+    needs: [parse-version, tag]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      packages: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet restore StringEnumGenerator.slnx
+      - run: dotnet build StringEnumGenerator.slnx --no-restore --configuration Release
+      - run: dotnet pack src/TcfOss.StringEnumGenerator/TcfOss.StringEnumGenerator.csproj --no-build --configuration Release --output ./nupkg -p:PackageVersion=${{ needs.parse-version.outputs.version }}
+      - run: dotnet nuget push ./nupkg/*.nupkg --source "https://nuget.pkg.github.com/tcfoss/index.json" --api-key ${{ secrets.GITHUB_TOKEN }} --skip-duplicate
+      - uses: NuGet/login@v1
+        id: nuget-login
+        with:
+          user: tcflanagan
+      - run: dotnet nuget push ./nupkg/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --skip-duplicate
+
+  finalize-release:
+    needs: [parse-version, tag, publish-dotnet, resolve-work-items]
+    uses: tcfoss/github-actions/.github/workflows/finalize-release.yml@v1
+    permissions:
+      contents: write
+    with:
+      version: ${{ needs.parse-version.outputs.version }}
+      release-status: Released
+      work-item-status: Released
+    secrets: inherit

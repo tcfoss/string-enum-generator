@@ -1,0 +1,69 @@
+name: Active Pull Request
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, edited, labeled, unlabeled, ready_for_review]
+
+jobs:
+  validate-work-items:
+    if: github.event.sender.type != 'Bot'
+    uses: tcfoss/github-actions/.github/workflows/validate-pr-work-items.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      pull-request-description: ${{ github.event.pull_request.body }}
+      api-url: ${{ vars.ISSUETRACKER_API_URL }}
+      target-status: Done
+    secrets:
+      issuetracker-api-token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+
+  lint:
+    uses: tcfoss/github-actions/.github/workflows/dotnet-lint.yml@v1
+    permissions:
+      contents: read
+    with:
+      solution: StringEnumGenerator.slnx
+
+  unit-tests:
+    needs: lint
+    uses: tcfoss/github-actions/.github/workflows/dotnet-test.yml@v1
+    permissions:
+      contents: read
+    with:
+      solution: StringEnumGenerator.slnx
+      project: test/TcfOss.StringEnumGenerator.Tests/TcfOss.StringEnumGenerator.Tests.csproj
+      name: StringEnumGenerator
+
+  today:
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.today.outputs.date }}
+    steps:
+      - id: today
+        run: echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+
+  validate-release:
+    needs: [today, validate-work-items]
+    if: startsWith(github.head_ref, 'release/')
+    uses: tcfoss/github-actions/.github/workflows/validate-release.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
+    with:
+      branch: ${{ github.head_ref }}
+      api-url: ${{ vars.ISSUETRACKER_API_URL }}
+      release-date: ${{ needs.today.outputs.date }}
+      status: Released
+      work-item-status: Released
+      work-items-to-be-resolved: ${{ needs.validate-work-items.outputs.work-item-ids }}
+    secrets:
+      issuetracker-api-token: ${{ secrets.ISSUETRACKER_API_TOKEN }}
+
+  coverage:
+    needs: unit-tests
+    if: always() && needs.unit-tests.result == 'success'
+    uses: tcfoss/github-actions/.github/workflows/coverage.yml@v1
+    permissions:
+      contents: read
+      pull-requests: write
