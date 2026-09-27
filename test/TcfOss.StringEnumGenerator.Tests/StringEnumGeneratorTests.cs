@@ -224,8 +224,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG001", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("StringEnum attribute must have at least one argument", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -245,8 +244,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG002", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("Text value cannot be null or whitespace", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -266,8 +264,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG003", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("VariableName cannot be null or whitespace", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -287,8 +284,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG004", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("Cannot construct a valid C# identifier from text value '!!!'", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -308,8 +304,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG003", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("VariableName cannot be null or whitespace", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -329,8 +324,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG005", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("VariableName '123Invalid' is not a valid C# identifier", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -347,8 +341,7 @@ public class StringEnumGeneratorTests
             """;
         _ = GenerateSource(annotatedSource);
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG007", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("VariableName 'class' is a C# reserved keyword", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -365,8 +358,7 @@ public class StringEnumGeneratorTests
             """;
         _ = GenerateSource(annotatedSource);
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG007", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("VariableName 'equals' is a C# reserved keyword", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -383,8 +375,7 @@ public class StringEnumGeneratorTests
             """;
         _ = GenerateSource(annotatedSource);
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG008", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("VariableName 'Equals' is already used by StringEnum-generated code", diag.GetMessage(CultureInfo.InvariantCulture));
@@ -405,8 +396,7 @@ public class StringEnumGeneratorTests
 
         ImmutableArray<Diagnostic> diagnostics = GetDiagnostics(annotatedSource);
 
-        Assert.Single(diagnostics);
-        Diagnostic diag = diagnostics[0];
+        Diagnostic diag = Assert.Single(diagnostics);
         Assert.Equal("SEG006", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("Duplicate VariableName 'DuplicateName' in StringEnum attributes", diag.GetMessage(CultureInfo.InvariantCulture));
