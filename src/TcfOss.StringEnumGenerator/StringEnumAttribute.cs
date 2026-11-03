@@ -18,5 +18,6 @@ namespace TcfOss.StringEnumGenerator
         public string Value { get; } = value;
         public string VariableName { get; } = variableName ?? value.ToVariableName();
         public string[] EquivalentValues { get; } = equivalentValues ?? [];
+        public int Order { get; set; }
     }
 }

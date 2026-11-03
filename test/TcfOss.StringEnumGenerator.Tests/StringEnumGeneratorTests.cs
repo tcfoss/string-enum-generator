@@ -21,6 +21,7 @@ public class StringEnumGeneratorTests
                 public string Value { get; } = value;
                 public string VariableName { get; } = variableName ?? value.ToVariableName();
                 public string[] EquivalentValues { get; } = equivalentValues ?? [];
+                public int Order { get; set; }
             }
         }
         """;
@@ -45,12 +46,12 @@ public class StringEnumGeneratorTests
         string[] sourceLines = combined.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Single(sourceLines, sl => sl.Contains("public sealed partial class MyOptionsTest"));
-        Assert.Single(sourceLines, sl => sl.Contains("Option1 = new(\"OPTION1\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("OptionB = new(\"OPTIONB\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("OptionC = new(\"OPTION_C\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("OptionD = new(\"OPTION D\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("_4option = new(\"4OPTION\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("NotEqual = new(\"<>\")"));
+        Assert.Single(sourceLines, sl => sl.Contains("Option1 = new(\"OPTION1\", 0)"));
+        Assert.Single(sourceLines, sl => sl.Contains("OptionB = new(\"OPTIONB\", 1)"));
+        Assert.Single(sourceLines, sl => sl.Contains("OptionC = new(\"OPTION_C\", 2)"));
+        Assert.Single(sourceLines, sl => sl.Contains("OptionD = new(\"OPTION D\", 3)"));
+        Assert.Single(sourceLines, sl => sl.Contains("_4option = new(\"4OPTION\", 4)"));
+        Assert.Single(sourceLines, sl => sl.Contains("NotEqual = new(\"<>\", 5)"));
 
         Assert.Single(sourceLines, sl => sl.Contains("=> Option1,"));
         Assert.Single(sourceLines, sl => sl.Contains("=> OptionB,"));
@@ -81,11 +82,11 @@ public class StringEnumGeneratorTests
         string[] sourceLines = combined.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Single(sourceLines, sl => sl.Contains("public sealed partial class MyOptionsTest"));
-        Assert.Single(sourceLines, sl => sl.Contains("Option1 = new(\"OPTION1\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("OptionB = new(\"OPTIONB\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("OptionC = new(\"OPTION_C\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("OptionD = new(\"OPTION D\")"));
-        Assert.Single(sourceLines, sl => sl.Contains("NotEqual = new(\"<>\")"));
+        Assert.Single(sourceLines, sl => sl.Contains("Option1 = new(\"OPTION1\", 0)"));
+        Assert.Single(sourceLines, sl => sl.Contains("OptionB = new(\"OPTIONB\", 1)"));
+        Assert.Single(sourceLines, sl => sl.Contains("OptionC = new(\"OPTION_C\", 2)"));
+        Assert.Single(sourceLines, sl => sl.Contains("OptionD = new(\"OPTION D\", 3)"));
+        Assert.Single(sourceLines, sl => sl.Contains("NotEqual = new(\"<>\", 4)"));
 
         Assert.Single(sourceLines, sl => sl.Contains("=> Option1,"));
         Assert.Single(sourceLines, sl => sl.Contains("=> OptionB,"));
@@ -110,7 +111,7 @@ public class StringEnumGeneratorTests
         string[] sourceLines = combined.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
 
         Assert.Single(sourceLines, sl => sl.Contains("public sealed partial class MyOptionsTest"));
-        Assert.Single(sourceLines, sl => sl.Contains("Option1 = new(\"OPTION1\")"));
+        Assert.Single(sourceLines, sl => sl.Contains("Option1 = new(\"OPTION1\", 0)"));
     }
 
     [Fact]
@@ -400,6 +401,141 @@ public class StringEnumGeneratorTests
         Assert.Equal("SEG006", diag.Id);
         Assert.Equal(DiagnosticSeverity.Error, diag.Severity);
         Assert.Equal("Duplicate VariableName 'DuplicateName' in StringEnum attributes", diag.GetMessage(CultureInfo.InvariantCulture));
+    }
+
+    [Fact]
+    public void GeneratesIndependentDefaultOrdersForEachType()
+    {
+        string source = """
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("FIRST", Order = 100)]
+            public sealed partial class First { }
+            [StringEnum("SECOND")]
+            public sealed partial class Second { }
+            """;
+
+        GeneratorRunResult result = RunGenerator(source).Results.Single();
+
+        Assert.Empty(result.Diagnostics);
+        string generated = result.GeneratedSources.Single(item => item.HintName == "Second.StringEnum.g.cs").SourceText.ToString();
+        Assert.Contains("Second = new(\"SECOND\", 0)", generated);
+    }
+
+    [Fact]
+    public void GeneratesExplicitAndIncrementingOrders()
+    {
+        string source = """
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("FIRST")]
+            [StringEnum("SECOND", Order = -2)]
+            [StringEnum("THIRD")]
+            [StringEnum("FOURTH", Order = 10)]
+            [StringEnum("FIFTH")]
+            [StringEnum("SIXTH", Order = int.MaxValue)]
+            [StringEnum("SEVENTH", Order = int.MinValue)]
+            [StringEnum("EIGHTH")]
+            public sealed partial class Ordered { }
+            """;
+
+        Type enumType = CompileGeneratedType(source, "Ordered");
+        string[] names = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth"];
+        int[] orders = [0, -2, -1, 10, 11, int.MaxValue, int.MinValue, int.MinValue + 1];
+        for (int index = 0; index < names.Length; index++)
+        {
+            object value = enumType.GetField(names[index])!.GetValue(null)!;
+            Assert.Equal(orders[index], enumType.GetProperty("Order")!.GetValue(value));
+        }
+    }
+
+    [Fact]
+    public void GeneratesComparisonsWithNullAndTypeValidation()
+    {
+        string source = """
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("LOW", Order = int.MinValue)]
+            [StringEnum("HIGH", Order = int.MaxValue)]
+            public sealed partial class Ordered { }
+            """;
+
+        Type enumType = CompileGeneratedType(source, "Ordered");
+        Assert.True(typeof(IComparable).IsAssignableFrom(enumType));
+        Assert.True(typeof(IComparable<>).MakeGenericType(enumType).IsAssignableFrom(enumType));
+        object low = enumType.GetField("Low")!.GetValue(null)!;
+        object high = enumType.GetField("High")!.GetValue(null)!;
+        object?[] operands = [null, low, high];
+        MethodInfo compareTo = enumType.GetMethod("CompareTo", [enumType])!;
+
+        for (int leftIndex = 0; leftIndex < operands.Length; leftIndex++)
+        {
+            for (int rightIndex = 0; rightIndex < operands.Length; rightIndex++)
+            {
+                object? left = operands[leftIndex];
+                object? right = operands[rightIndex];
+                int expected = leftIndex.CompareTo(rightIndex);
+                if (left is not null)
+                {
+                    Assert.Equal(expected, Math.Sign((int)compareTo.Invoke(left, [right])!));
+                    Assert.Equal(expected, Math.Sign(((IComparable)left).CompareTo(right)));
+                }
+
+                Assert.Equal(expected < 0, enumType.GetMethod("op_LessThan")!.Invoke(null, [left, right]));
+                Assert.Equal(expected <= 0, enumType.GetMethod("op_LessThanOrEqual")!.Invoke(null, [left, right]));
+                Assert.Equal(expected > 0, enumType.GetMethod("op_GreaterThan")!.Invoke(null, [left, right]));
+                Assert.Equal(expected >= 0, enumType.GetMethod("op_GreaterThanOrEqual")!.Invoke(null, [left, right]));
+            }
+        }
+
+        Assert.Throws<ArgumentException>(() => ((IComparable)low).CompareTo("LOW"));
+    }
+
+    [Theory]
+    [InlineData("Order")]
+    [InlineData("CompareTo")]
+    [InlineData("_order")]
+    public void Generate_Error_ComparisonMemberName(string name)
+    {
+        string source = $$"""
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("TEST", "{{name}}")]
+            public sealed partial class Ordered { }
+            """;
+
+        Diagnostic diagnostic = Assert.Single(GetDiagnostics(source));
+        Assert.Equal("SEG008", diagnostic.Id);
+        Assert.Equal($"VariableName '{name}' is already used by StringEnum-generated code", diagnostic.GetMessage(CultureInfo.InvariantCulture));
+        Assert.Empty(RunGenerator(source).Results.Single().GeneratedSources);
+    }
+
+    [Fact]
+    public void Generate_Error_DuplicateOrderIncludingExplicitZero()
+    {
+        string source = """
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("FIRST")]
+            [StringEnum("SECOND", Order = 0)]
+            public sealed partial class Ordered { }
+            """;
+
+        Diagnostic diagnostic = Assert.Single(GetDiagnostics(source));
+        Assert.Equal("SEG009", diagnostic.Id);
+        Assert.Equal("Duplicate order '0' in StringEnum attributes", diagnostic.GetMessage(CultureInfo.InvariantCulture));
+        Assert.Empty(RunGenerator(source).Results.Single().GeneratedSources);
+    }
+
+    [Fact]
+    public void Generate_Error_ImplicitOrderOverflow()
+    {
+        string source = """
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("FIRST", Order = int.MaxValue)]
+            [StringEnum("SECOND")]
+            public sealed partial class Ordered { }
+            """;
+
+        Diagnostic diagnostic = Assert.Single(GetDiagnostics(source));
+        Assert.Equal("SEG010", diagnostic.Id);
+        Assert.Equal("Implicit order exceeds Int32.MaxValue; specify an explicit Order", diagnostic.GetMessage(CultureInfo.InvariantCulture));
+        Assert.Empty(RunGenerator(source).Results.Single().GeneratedSources);
     }
 
     public static GeneratorDriverRunResult RunGenerator(string annotatedClassSource)

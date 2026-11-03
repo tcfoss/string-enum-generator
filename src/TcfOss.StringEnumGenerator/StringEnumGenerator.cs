@@ -65,9 +65,28 @@ public class StringEnumGenerator : IIncrementalGenerator
 
                 var values = new List<StringEnumOption>();
                 bool hasError = false;
+                long nextOrder = 0;
                 foreach (AttributeData attr in attrs)
                 {
                     var curr = new List<string>();
+                    int? explicitOrder = null;
+                    foreach (KeyValuePair<string, TypedConstant> namedArg in attr.NamedArguments)
+                    {
+                        if (namedArg.Key == nameof(StringEnumAttribute.Order) && namedArg.Value.Value is int order)
+                        {
+                            explicitOrder = order;
+                        }
+                    }
+
+                    long effectiveOrder = explicitOrder ?? nextOrder;
+                    if (effectiveOrder > int.MaxValue)
+                    {
+                        sourceProductionContext.ReportDiagnostic(Diagnostic.Create(s_orderOverflow, classDecl.GetLocation()));
+                        hasError = true;
+                        break;
+                    }
+                    nextOrder = effectiveOrder + 1;
+
                     foreach (TypedConstant arg in attr.ConstructorArguments)
                     {
                         if (arg.Kind == TypedConstantKind.Array)
@@ -85,7 +104,7 @@ public class StringEnumGenerator : IIncrementalGenerator
                             curr.Add(s);
                         }
                     }
-                    StringEnumOption option = ToStringEnumOption(curr);
+                    StringEnumOption option = ToStringEnumOption(curr, (int)effectiveOrder);
 
                     if (option.Error != null)
                     {
@@ -101,11 +120,18 @@ public class StringEnumGenerator : IIncrementalGenerator
                 }
 
                 HashSet<string> variableNames = [];
+                HashSet<int> orders = [];
                 foreach (StringEnumOption option in values)
                 {
                     if (!variableNames.Add(option.VariableName))
                     {
                         sourceProductionContext.ReportDiagnostic(Diagnostic.Create(s_duplicateVariableName, classDecl.GetLocation(), option.VariableName));
+                        hasError = true;
+                        break;
+                    }
+                    if (!orders.Add(option.Order))
+                    {
+                        sourceProductionContext.ReportDiagnostic(Diagnostic.Create(s_duplicateOrder, classDecl.GetLocation(), option.Order));
                         hasError = true;
                         break;
                     }
@@ -162,7 +188,7 @@ public class StringEnumGenerator : IIncrementalGenerator
             sb.AppendLine();
         }
         sb.AppendLine(CultureInfo.InvariantCulture, $"[GeneratedCode(\"TcfOss.StringEnumGenerator\", \"{s_toolVersion}\")]");
-        sb.AppendLine(CultureInfo.InvariantCulture, $"public sealed partial class {name} : IStringEnum<{name}>, IEquatable<{name}>");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"public sealed partial class {name} : IStringEnum<{name}>, IEquatable<{name}>, IComparable<{name}>, IComparable");
         sb.AppendLine("{");
         sb.AppendLine("    private static ValueArray<string> s_allowedValues = new ValueArray<string>(new string[] {");
         for (int i = 0; i < values.Count; i++)
@@ -178,12 +204,15 @@ public class StringEnumGenerator : IIncrementalGenerator
         sb.AppendLine("    public static ValueArray<string> AllowedValues => s_allowedValues;");
         sb.AppendLine();
         sb.AppendLine("    private readonly string _text;");
+        sb.AppendLine("    private readonly int _order;");
         sb.AppendLine();
         sb.AppendLine("    public string Text => _text;");
+        sb.AppendLine("    public int Order => _order;");
         sb.AppendLine();
-        sb.AppendLine(CultureInfo.InvariantCulture, $"    private {name}(string text)");
+        sb.AppendLine(CultureInfo.InvariantCulture, $"    private {name}(string text, int order)");
         sb.AppendLine("    {");
         sb.AppendLine("        _text = text;");
+        sb.AppendLine("        _order = order;");
         sb.AppendLine("    }");
         sb.AppendLine();
         sb.AppendLine("    public override string ToString()");
@@ -234,10 +263,24 @@ public class StringEnumGenerator : IIncrementalGenerator
         sb.AppendLine("    public static bool operator ==(" + name + "? left, " + name + "? right) => ReferenceEquals(left, right);");
         sb.AppendLine("    public static bool operator !=(" + name + "? left, " + name + "? right) => !ReferenceEquals(left, right);");
         sb.AppendLine();
+        sb.AppendLine("    public int CompareTo(" + name + "? other) => (other is null) ? 1 : _order.CompareTo(other._order);");
+        sb.AppendLine();
+        sb.AppendLine("    int IComparable.CompareTo(object? obj) => obj switch");
+        sb.AppendLine("    {");
+        sb.AppendLine("        null => 1,");
+        sb.AppendLine("        " + name + " other => CompareTo(other),");
+        sb.AppendLine("        _ => throw new ArgumentException(\"Object must be of type " + name + ".\", nameof(obj))");
+        sb.AppendLine("    };");
+        sb.AppendLine();
+        sb.AppendLine("    public static bool operator <(" + name + "? left, " + name + "? right) => left is null ? right is not null : left.CompareTo(right) < 0;");
+        sb.AppendLine("    public static bool operator <=(" + name + "? left, " + name + "? right) => left is null || left.CompareTo(right) <= 0;");
+        sb.AppendLine("    public static bool operator >(" + name + "? left, " + name + "? right) => left is not null && left.CompareTo(right) > 0;");
+        sb.AppendLine("    public static bool operator >=(" + name + "? left, " + name + "? right) => left is null ? right is null : left.CompareTo(right) >= 0;");
+        sb.AppendLine();
 
         for (int i = 0; i < values.Count; i++)
         {
-            sb.AppendLine(CultureInfo.InvariantCulture, $"    public static readonly {name} {values[i].VariableName} = new(\"{values[i].Text}\");");
+            sb.AppendLine(CultureInfo.InvariantCulture, $"    public static readonly {name} {values[i].VariableName} = new(\"{values[i].Text}\", {values[i].Order});");
         }
 
         sb.AppendLine("}");
@@ -245,11 +288,11 @@ public class StringEnumGenerator : IIncrementalGenerator
         return sb.ToString();
     }
 
-    private static StringEnumOption ToStringEnumOption(List<string> values)
+    private static StringEnumOption ToStringEnumOption(List<string> values, int order)
     {
         if (values.Count == 0)
         {
-            return new StringEnumOption("", "") { Error = s_noValue };
+            return new StringEnumOption("", "", -1) { Error = s_noValue };
         }
 
         StringEnumOption result;
@@ -259,21 +302,21 @@ public class StringEnumGenerator : IIncrementalGenerator
             IdentifierError error = variableName.IsValidCSharpIdentifier();
             if (error != IdentifierError.None)
             {
-                return new StringEnumOption(values[0], variableName)
+                return new StringEnumOption(values[0], variableName, -1)
                 {
                     Error = s_cannotConstructVariableName,
                     ErrorArgs = new ValueArray<string>([values[0]])
                 };
             }
-            result = new StringEnumOption(values[0], variableName);
+            result = new StringEnumOption(values[0], variableName, order);
         }
         else if (values.Count == 2)
         {
-            result = new StringEnumOption(values[0], values[1]);
+            result = new StringEnumOption(values[0], values[1], order);
         }
         else
         {
-            result = new StringEnumOption(values[0], values[1], new ValueArray<string>([.. values[2..]]));
+            result = new StringEnumOption(values[0], values[1], order, new ValueArray<string>([.. values[2..]]));
         }
 
         if (string.IsNullOrWhiteSpace(result.Text))
@@ -356,6 +399,24 @@ public class StringEnumGenerator : IIncrementalGenerator
         id: "SEG006",
         title: "StringEnum generation error: Duplicate variable name",
         messageFormat: "Duplicate VariableName '{0}' in StringEnum attributes",
+        category: "Syntax",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor s_duplicateOrder = new(
+        id: "SEG009",
+        title: "StringEnum generation error: Duplicate order",
+        messageFormat: "Duplicate order '{0}' in StringEnum attributes",
+        category: "Syntax",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true
+    );
+
+    private static readonly DiagnosticDescriptor s_orderOverflow = new(
+        id: "SEG010",
+        title: "StringEnum generation error: Order overflow",
+        messageFormat: "Implicit order exceeds Int32.MaxValue; specify an explicit Order",
         category: "Syntax",
         defaultSeverity: DiagnosticSeverity.Error,
         isEnabledByDefault: true

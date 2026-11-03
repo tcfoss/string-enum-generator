@@ -31,7 +31,7 @@ public partial class ReferentialAction { }
 This will trigger `StringEnumGenerator` to generate the following implementation:
 
 ```cs
-public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, IEquatable<ReferentialAction>
+public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, IEquatable<ReferentialAction>, IComparable<ReferentialAction>, IComparable
 {
     private static ValueArray<string> s_allowedValues = new ValueArray<string>(new string[] {
         "RESTRICT",
@@ -44,12 +44,15 @@ public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, 
     public static ValueArray<string> AllowedValues => s_allowedValues;
 
     private readonly string _text;
+    private readonly int _order;
 
     public string Text => _text;
+    public int Order => _order;
 
-    private ReferentialAction(string text)
+    private ReferentialAction(string text, int order)
     {
         _text = text;
+        _order = order;
     }
 
     public override string ToString()
@@ -92,13 +95,49 @@ public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, 
 
     bool IEquatable<ReferentialAction>.Equals(ReferentialAction? other) => Equals(other);
 
-    public static readonly ReferentialAction Restrict = new("RESTRICT");
-    public static readonly ReferentialAction Cascade = new("CASCADE");
-    public static readonly ReferentialAction SetNull = new("SET NULL");
-    public static readonly ReferentialAction NoAction = new("NO ACTION");
-    public static readonly ReferentialAction SetDefault = new("SET DEFAULT");
+    public static bool operator ==(ReferentialAction? left, ReferentialAction? right) => ReferenceEquals(left, right);
+    public static bool operator !=(ReferentialAction? left, ReferentialAction? right) => !ReferenceEquals(left, right);
+
+    public int CompareTo(ReferentialAction? other) => (other is null) ? 1 : _order.CompareTo(other._order);
+
+    int IComparable.CompareTo(object? obj) => obj switch
+    {
+        null => 1,
+        ReferentialAction other => CompareTo(other),
+        _ => throw new ArgumentException("Object must be of type ReferentialAction.", nameof(obj))
+    };
+
+    public static bool operator <(ReferentialAction? left, ReferentialAction? right) => left is null ? right is not null : left.CompareTo(right) < 0;
+    public static bool operator <=(ReferentialAction? left, ReferentialAction? right) => left is null || left.CompareTo(right) <= 0;
+    public static bool operator >(ReferentialAction? left, ReferentialAction? right) => left is not null && left.CompareTo(right) > 0;
+    public static bool operator >=(ReferentialAction? left, ReferentialAction? right) => left is null ? right is null : left.CompareTo(right) >= 0;
+
+    public static readonly ReferentialAction Restrict = new("RESTRICT", 0);
+    public static readonly ReferentialAction Cascade = new("CASCADE", 1);
+    public static readonly ReferentialAction SetNull = new("SET NULL", 2);
+    public static readonly ReferentialAction NoAction = new("NO ACTION", 3);
+    public static readonly ReferentialAction SetDefault = new("SET DEFAULT", 4);
 }
 ```
+
+## Ordering and Comparison
+
+Generated types implement `IComparable<T>` and `IComparable`, and support `<`, `<=`, `>`, and `>=`.
+Each value exposes an integer `Order`, starting at zero.
+Use the named attribute property `Order` to override a value; subsequent implicit values
+increment from that override:
+
+```cs
+[StringEnum("LOW")]
+[StringEnum("MEDIUM", Order = 10)]
+[StringEnum("HIGH")]
+public partial class Priority { }
+```
+
+Here, the orders are `0`, `10`, and `11`. Negative orders and explicit zero are supported. Orders
+must be unique.
+
+Equality remains reference-based.
 
 ## Special Case: Enumerated Variable Names
 
@@ -112,7 +151,7 @@ public partial class ReferentialAction { }
 
 Then the generated code will contain
 ```cs
-public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, IEquatable<ReferentialAction>
+public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, IEquatable<ReferentialAction>, IComparable<ReferentialAction>, IComparable
 {
 
     // Other members omitted for brevity
@@ -129,8 +168,8 @@ public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, 
 
     // Other members omitted for brevity
 
-    public static readonly ReferentialAction Plus = new("+");
-    public static readonly ReferentialAction Minus = new("-");
+    public static readonly ReferentialAction Plus = new("+", 0);
+    public static readonly ReferentialAction Minus = new("-", 1);
 }
 ```
 
@@ -175,9 +214,9 @@ public sealed partial class RoutineParameterDirection
 
     // Other members omitted for brevity
 
-    public static readonly RoutineParameterDirection In = new("IN");
-    public static readonly RoutineParameterDirection Out = new("OUT");
-    public static readonly RoutineParameterDirection InOut = new("INOUT");
+    public static readonly RoutineParameterDirection In = new("IN", 0);
+    public static readonly RoutineParameterDirection Out = new("OUT", 1);
+    public static readonly RoutineParameterDirection InOut = new("INOUT", 2);
 }
 ```
 
@@ -195,4 +234,3 @@ Contributions are welcome. Follow the usual fork-and-pull request workflow. Befo
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
-
