@@ -43,3 +43,12 @@ Rule ID | Category | Severity | Notes
 --------|----------|----------|---------------------
 SEG007  | Syntax   | Error    | Reserved keyword
 SEG008  | Syntax   | Error    | Used by generated code
+
+## Release 1.1.0
+
+### New Rules
+
+Rule ID | Category | Severity | Notes
+--------|----------|----------|---------------------
+SEG009  | Syntax   | Error    | Duplicate order
+SEG010  | Syntax   | Error    | Implicit order overflow
