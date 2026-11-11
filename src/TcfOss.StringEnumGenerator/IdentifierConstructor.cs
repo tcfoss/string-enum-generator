@@ -7,7 +7,7 @@ namespace TcfOss.StringEnumGenerator;
 public static partial class IdentifierConstructor
 {
     private static readonly Regex s_nonIdentifierChars = CreateNonIdentifierCharacterRegex();
-    private static readonly HashSet<string> s_usedVariableNames = ["Equals", "GetHashCode", "ToString", "FromText", "TryParse", "Text", "AllowedValues", "_text", "s_allowedValues", "Order", "CompareTo", "_order"];
+    private static readonly HashSet<string> s_usedVariableNames = ["Equals", "GetHashCode", "ToString", "FromText", "TryParse", "Text", "AllowedValues", "_text", "s_allowedValues", "Order", "CompareTo", "_order", "ValueKind", "Kind"];
 
     public static string ToVariableName(this string value)
     {
