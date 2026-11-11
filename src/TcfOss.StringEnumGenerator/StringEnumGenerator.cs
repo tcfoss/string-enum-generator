@@ -190,6 +190,14 @@ public class StringEnumGenerator : IIncrementalGenerator
         sb.AppendLine(CultureInfo.InvariantCulture, $"[GeneratedCode(\"TcfOss.StringEnumGenerator\", \"{s_toolVersion}\")]");
         sb.AppendLine(CultureInfo.InvariantCulture, $"public sealed partial class {name} : IStringEnum<{name}>, IEquatable<{name}>, IComparable<{name}>, IComparable");
         sb.AppendLine("{");
+        sb.AppendLine("    public enum ValueKind");
+        sb.AppendLine("    {");
+        for (int i = 0; i < values.Count; i++)
+        {
+            sb.AppendLine(CultureInfo.InvariantCulture, $"        {values[i].VariableName} = {values[i].Order},");
+        }
+        sb.AppendLine("    }");
+        sb.AppendLine();
         sb.AppendLine("    private static ValueArray<string> s_allowedValues = new ValueArray<string>(new string[] {");
         for (int i = 0; i < values.Count; i++)
         {
@@ -208,6 +216,7 @@ public class StringEnumGenerator : IIncrementalGenerator
         sb.AppendLine();
         sb.AppendLine("    public string Text => _text;");
         sb.AppendLine("    public int Order => _order;");
+        sb.AppendLine("    public ValueKind Kind => (ValueKind)_order;");
         sb.AppendLine();
         sb.AppendLine(CultureInfo.InvariantCulture, $"    private {name}(string text, int order)");
         sb.AppendLine("    {");

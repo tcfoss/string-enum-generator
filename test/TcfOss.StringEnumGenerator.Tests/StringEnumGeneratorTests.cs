@@ -440,11 +440,41 @@ public class StringEnumGeneratorTests
         Type enumType = CompileGeneratedType(source, "Ordered");
         string[] names = ["First", "Second", "Third", "Fourth", "Fifth", "Sixth", "Seventh", "Eighth"];
         int[] orders = [0, -2, -1, 10, 11, int.MaxValue, int.MinValue, int.MinValue + 1];
+        Type kindType = enumType.GetNestedType("ValueKind")!;
         for (int index = 0; index < names.Length; index++)
         {
             object value = enumType.GetField(names[index])!.GetValue(null)!;
             Assert.Equal(orders[index], enumType.GetProperty("Order")!.GetValue(value));
+            object kind = enumType.GetProperty("Kind")!.GetValue(value)!;
+            Assert.Equal(Enum.Parse(kindType, names[index]), kind);
+            Assert.Equal(orders[index], Convert.ToInt32(kind, CultureInfo.InvariantCulture));
         }
+    }
+
+    [Fact]
+    public void GeneratedKindSupportsPropertyPatternsAndAliases()
+    {
+        string source = """
+            using TcfOss.StringEnumGenerator;
+            [StringEnum("LOW")]
+            [StringEnum("HIGH", "High", "H", Order = 10)]
+            public sealed partial class Priority
+            {
+                public static string Describe(Priority? value) => value switch
+                {
+                    { Kind: ValueKind.Low } => "low",
+                    { Kind: ValueKind.High } => "high",
+                    _ => "unknown"
+                };
+            }
+            """;
+
+        Type enumType = CompileGeneratedType(source, "Priority");
+        MethodInfo parse = enumType.GetMethod("Parse")!;
+        MethodInfo describe = enumType.GetMethod("Describe")!;
+        Assert.Equal("low", describe.Invoke(null, [parse.Invoke(null, ["LOW"])]));
+        Assert.Equal("high", describe.Invoke(null, [parse.Invoke(null, ["H"])]));
+        Assert.Equal("unknown", describe.Invoke(null, [null]));
     }
 
     [Fact]
@@ -492,6 +522,8 @@ public class StringEnumGeneratorTests
     [InlineData("Order")]
     [InlineData("CompareTo")]
     [InlineData("_order")]
+    [InlineData("ValueKind")]
+    [InlineData("Kind")]
     public void Generate_Error_ComparisonMemberName(string name)
     {
         string source = $$"""

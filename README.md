@@ -33,6 +33,15 @@ This will trigger `StringEnumGenerator` to generate the following implementation
 ```cs
 public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, IEquatable<ReferentialAction>, IComparable<ReferentialAction>, IComparable
 {
+    public enum ValueKind
+    {
+        Restrict = 0,
+        Cascade = 1,
+        SetNull = 2,
+        NoAction = 3,
+        SetDefault = 4,
+    }
+
     private static ValueArray<string> s_allowedValues = new ValueArray<string>(new string[] {
         "RESTRICT",
         "CASCADE",
@@ -48,6 +57,7 @@ public sealed partial class ReferentialAction : IStringEnum<ReferentialAction>, 
 
     public string Text => _text;
     public int Order => _order;
+    public ValueKind Kind => (ValueKind)_order;
 
     private ReferentialAction(string text, int order)
     {
@@ -138,6 +148,24 @@ Here, the orders are `0`, `10`, and `11`. Negative orders and explicit zero are 
 must be unique.
 
 Equality remains reference-based.
+
+## Pattern Matching
+
+Each generated type has a nested `ValueKind` enum whose members have the same names as the
+generated static values. The `Kind` property supports property patterns:
+
+```cs
+string result = action switch
+{
+    { Kind: ReferentialAction.ValueKind.Restrict } => "Restricted",
+    { Kind: ReferentialAction.ValueKind.Cascade } => "Cascading",
+    _ => "Other"
+};
+```
+
+Equivalent text values map to the same kind, and each enum member's numeric value is its `Order`.
+Changing an order, including by reordering attributes with implicit orders, changes the
+corresponding numeric value. `Kind` and `ValueKind` are reserved generated member names.
 
 ## Special Case: Enumerated Variable Names
 
